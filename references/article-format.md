@@ -28,7 +28,9 @@ article.json（UTF-8 JSON，不是 shell 文件）：
 
 `article_id` 是文章稳定身份，英文/数字/连字符/下划线，最多 96 字符；同一篇后续修改仍用原 ID。另起新 ID 表示另一篇，会产生新草稿。不能为“修复报错”随意修改 ID。`init` 命令会生成 UUID。
 
-`title` ≤32 字、`author` ≤16 字、`digest` ≤120 字。导语作为摘要填写，不自动插入正文；如需正文引言，请在 article.md 明确写好。正文默认限制为 3000 个可见非空白字符（包含标点和英文字母），比口语“中文字数”更保守，超限会停止，不截断。格式化 HTML 另受微信 20000 字符/1 MB 限制。
+`title` ≤32 字、`author` ≤16 字、`digest` ≤120 字。author 省略或为空时继承个人文件的默认作者，Agent 不需要复制个人作者名到每篇文章中；非空 author 可用于明确指定其他作者。可选 `need_open_comment`、`only_fans_can_comment` 使用数字 0/1，省略时继承个人默认值，均未配置时不发送。完整规则见 [文章设置](../docs/article-settings.md)。
+
+导语只填摘要字段，不放入正文。与 digest 相同的开头独立摘要（包括引用块或开篇图后）会在导入时去掉；标记摘要与 digest 不同会停止要求核对，不改原稿。其他实际正文段落保持不变。本地预览的摘要设置区不属于上传正文。正文默认限制为 3000 个可见非空白字符（包含标点和英文字母），比口语“中文字数”更保守，超限会停止，不截断。格式化 HTML 另受微信 20000 字符/1 MB 限制。
 
 正文示例：
 
@@ -54,4 +56,4 @@ article.json（UTF-8 JSON，不是 shell 文件）：
 
 可直接把以下要求交给 Trae 的写作/生图 Agent：
 
-> 定稿和全部图片验收后，按 wechat-draft-importer/references/article-format.md 创建文章交接文件夹。保留最终正文，把每张已生成的本地插图路径写进对应位置的 Markdown 图片标记；生成 article.json，填写稳定 article_id、标题、导语、作者、正文路径和封面路径。不要执行生图，不要把 API 密钥写进交接包。交接完成后先运行 prepare 检查。
+> 定稿和全部图片验收后，按 wechat-draft-importer/references/article-format.md 创建文章交接文件夹，保留原稿。把独立导语移到 article.json 的 digest，正文不重复放导语；正文其余内容不改写，每张本地插图路径写进对应位置的 Markdown 图片标记。生成 article.json，填写稳定 article_id、标题、导语、正文路径和封面路径，author 留空以使用个人文件的默认作者。不要执行生图，不要把 API 密钥或个人设置文件复制进交接包。交接完成后先运行 prepare 检查。

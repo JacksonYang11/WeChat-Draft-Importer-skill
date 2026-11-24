@@ -20,6 +20,8 @@
 
 程序、文档、测试和示例会整体复制；虚拟环境、状态和凭证不会复制，目标目录需单独运行 `setup.sh`。
 
+真实 personal-settings.json 同样不会复制；各副本默认读取自身根目录的 personal-settings.json，共用原文件时使用 --personal-settings 指定绝对路径，无需把个人作者名或凭证写进 Skill。详情见 [文章设置](article-settings.md)。
+
 注意事项：
 
 - 目标目录已存在时不会覆盖，升级前需先手动删除旧目录。

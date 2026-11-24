@@ -22,10 +22,11 @@ import urllib.parse
 import urllib.request
 import uuid
 
-VERSION = "1.0.0"
+VERSION = "1.1.0"
 API = "https://api.weixin.qq.com"
 ROOT = Path(__file__).resolve().parent.parent
 CONFIG = Path.home() / ".config/wechat-draft-importer/config.json"
+PERSONAL = ROOT / "personal-settings.json"
 DATA = Path.home() / ".local/share/wechat-draft-importer"
 MAX_IMAGE = 950_000  # Stay below the documented <1 MB limit, including rounding differences.
 STYLES = {
@@ -155,6 +156,44 @@ def credentials(config):
     return appid, secret
 
 
+def personal_settings(path=None):
+    """Read publishing preferences without reading credentials or contacting WeChat."""
+    explicit = path is not None
+    path = Path(path).expanduser() if explicit else PERSONAL
+    if not path.exists() and not explicit:
+        return {}
+    if not path.is_file():
+        raise Failure("个人设置文件不存在：" + str(path), "invalid_input", 2)
+    if path.stat().st_mode & 0o077:
+        raise Failure("个人设置文件权限须为 600：" + str(path), "invalid_input", 2)
+    value = read_json(path)
+    allowed = {"author", "need_open_comment", "only_fans_can_comment", "backend_settings"}
+    if not isinstance(value, dict) or set(value) - allowed:
+        raise Failure("个人设置格式错误或含不支持的字段，见 personal-settings.example.json", "invalid_input", 2)
+    if "author" in value and (not isinstance(value["author"], str) or len(value["author"]) > 16):
+        raise Failure("个人设置 author 须为不超过 16 字的字符串", "invalid_input", 2)
+    for key in ("need_open_comment", "only_fans_can_comment"):
+        if key in value and (type(value[key]) is not int or value[key] not in (0, 1)):
+            raise Failure("个人设置 " + key + " 须为数字 0 或 1", "invalid_input", 2)
+    backend = value.get("backend_settings", {})
+    if not isinstance(backend, dict) or set(backend) - {"original", "reward", "creation_source"}:
+        raise Failure("backend_settings 含不支持的字段", "invalid_input", 2)
+    for key in ("original", "reward"):
+        if key in backend and type(backend[key]) is not bool:
+            raise Failure("backend_settings 的开关须为 true 或 false", "invalid_input", 2)
+    if "creation_source" in backend and (not isinstance(backend["creation_source"], str)
+                                           or len(backend["creation_source"]) > 120):
+        raise Failure("creation_source 须为不超过 120 字的字符串", "invalid_input", 2)
+    return value
+
+
+def manual_settings(profile):
+    # These are preferences, not documented API fields and never part of an API payload.
+    return [{"setting": key, "requested": value, "status": "manual_required"}
+            for key, value in profile.get("backend_settings", {}).items()
+            if key != "creation_source" or value]
+
+
 class WeChat:
     """No automatic HTTP retries, redirects, or secret-bearing raw errors."""
     def __init__(self, appid, secret, network="direct"):
@@ -213,7 +252,8 @@ class WeChat:
                 raise ApiFailure("调用出口 IP 不在白名单；请在开发者平台更新，必要时由管理员扫码。", "ip_whitelist", 4, **details)
             hints = {40125: "密钥无效，请核对当前账号的 AppSecret。", 48001: "账号缺少此接口权限。",
                      45009: "今日接口额度已用尽。", 40001: "凭证无效或失效。", 42001: "凭证过期。",
-                     89503: "微信要求管理员确认本次调用。", 40007: "素材或草稿 ID 无效，可能已删除或发表。"}
+                     89503: "微信要求管理员确认本次调用。", 40007: "素材或草稿 ID 无效，可能已删除或发表。",
+                     88000: "公众号缺少留言功能权限；不会自动关闭留言后重试。"}
             raise ApiFailure(hints.get(code, "微信拒绝请求，请按错误码核对官方文档。"), "wechat_api", 6, **details)
         return result
 
@@ -355,12 +395,59 @@ def remote_revision(article):
                              ensure_ascii=False, sort_keys=True).encode())
 
 
-def load_bundle(folder):
+def remove_digest_tokens(tokens, summary):
+    """Remove only a matching standalone opening summary, keeping leading pictures."""
+    removed, index = 0, 0
+    normal = lambda text: re.sub(r"\s+", "", text)
+    while index < len(tokens):
+        quoted = tokens[index].type == "blockquote_open"
+        start = index + int(quoted)
+        if (start + 2 >= len(tokens) or tokens[start].type != "paragraph_open"
+                or tokens[start + 1].type != "inline" or tokens[start + 2].type != "paragraph_close"):
+            break
+        end = start + 3
+        if quoted:
+            if end >= len(tokens) or tokens[end].type != "blockquote_close":
+                break
+            end += 1
+        children = tokens[start + 1].children or []
+        if any(child.type == "image" for child in children):
+            if not quoted and all(child.type in ("image", "softbreak", "hardbreak")
+                                  or (child.type == "text" and not child.content.strip()) for child in children):
+                index = end
+                continue
+            break
+        text = "".join(child.content for child in children if child.type in ("text", "code_inline"))
+        # CommonMark may treat **摘要：**紧接中文 as literal punctuation.
+        label = re.match(r"^\s*(?:\*\*|__)?(?:导语|摘要)\s*[：:]\s*(?:\*\*|__)?\s*", text)
+        content = text[label.end():] if label else text
+        if normal(content) == normal(summary):
+            del tokens[index:end]
+            removed += 1
+        elif label:
+            raise Failure("正文开头的导语与 digest 不一致；请把最终导语填入 digest，正文仅保留文章内容。", "invalid_input", 2)
+        else:
+            break
+    return removed
+
+
+def load_bundle(folder, profile=None):
+    profile = profile or {}
     MarkdownIt, _, _ = dependencies()
     folder = Path(folder).expanduser().resolve()
     manifest = read_json(folder / "article.json")
     if not isinstance(manifest, dict):
         raise Failure("article.json 须为对象", "invalid_input", 2)
+    # Empty legacy author fields inherit the local preference; explicit nonempty author wins.
+    if not manifest.get("author") and profile.get("author"):
+        manifest["author"] = profile["author"]
+    for field in ("need_open_comment", "only_fans_can_comment"):
+        if field not in manifest and field in profile:
+            manifest[field] = profile[field]
+        if field in manifest and (type(manifest[field]) is not int or manifest[field] not in (0, 1)):
+            raise Failure(field + " 须为数字 0 或 1", "invalid_input", 2)
+    if manifest.get("only_fans_can_comment") == 1 and manifest.get("need_open_comment") != 1:
+        raise Failure("仅粉丝留言需同时设置 need_open_comment=1", "invalid_input", 2)
     for field in ("article_id", "title", "digest", "content", "cover"):
         if not isinstance(manifest.get(field), str) or not manifest[field].strip():
             raise Failure("缺少有效字段：" + field, "invalid_input", 2)
@@ -392,6 +479,7 @@ def load_bundle(folder):
         markdown = re.sub(r"\A\s*#\s+[^\n]*(?:\n|$)", "", markdown, count=1)
     renderer = MarkdownIt("commonmark", {"html": False, "breaks": True})
     tokens = renderer.parse(markdown)
+    summary_removed = remove_digest_tokens(tokens, manifest["digest"])
     images, by_path, order = {}, {}, []
 
     def visit(items):
@@ -423,7 +511,8 @@ def load_bundle(folder):
                                     "images": {key: value["hash"] for key, value in images.items()},
                                     "renderer": VERSION}, ensure_ascii=False, sort_keys=True).encode())
     return {"folder": folder, "manifest": manifest, "body": body, "images": images, "order": order,
-            "cover": cover, "fingerprint": fingerprint, "char_count": len(text)}
+            "cover": cover, "fingerprint": fingerprint, "char_count": len(text),
+            "summary_paragraphs_removed": summary_removed, "manual_settings": manual_settings(profile)}
 
 
 def check_content(content, reserve=0):
@@ -447,12 +536,15 @@ def preview(bundle):
                 '<meta http-equiv="Content-Security-Policy" content="default-src \'none\'; img-src \'self\' file:; style-src \'unsafe-inline\'">'
                 '<title>公众号导入预览</title><body style="max-width:677px;margin:32px auto;padding:0 20px">'
                 '<p>本地排版预览；微信可能改写样式，发布前请在公众号后台检查。</p><h1>' + html.escape(manifest["title"]) +
-                '</h1><p>导语：' + html.escape(manifest["digest"]) + '</p><p>封面原图（后台按比例裁切）：</p>'
-                '<img src="cover.jpg" style="max-width:100%">' + body + '</body></html>')
+                '</h1><details><summary>摘要与封面设置（不属于上传正文）</summary><p>摘要：' +
+                html.escape(manifest["digest"]) + '</p><p>封面原图（后台按比例裁切）：</p>'
+                '<img src="cover.jpg" style="max-width:100%"></details><hr>' + body + '</body></html>')
     atomic(output / "preview.html", document.encode())
     return {"ok": True, "status": "prepared", "article_id": manifest["article_id"], "title": manifest["title"],
             "characters": bundle["char_count"], "inline_images": len(bundle["order"]), "images": sizes,
-            "preview": str(output / "preview.html"), "fingerprint": bundle["fingerprint"]}
+            "preview": str(output / "preview.html"), "fingerprint": bundle["fingerprint"],
+            "summary_paragraphs_removed": bundle.get("summary_paragraphs_removed", 0),
+            "manual_settings": bundle.get("manual_settings", [])}
 
 
 @contextlib.contextmanager
@@ -490,6 +582,9 @@ def verify(client, state):
     expected = state["expected"]
     checks = {field: saved.get(field, "") == expected.get(field, "")
               for field in ("title", "author", "digest", "thumb_media_id")}
+    for field in ("need_open_comment", "only_fans_can_comment"):
+        if field in expected:
+            checks[field] = type(saved.get(field)) is int and saved[field] == expected[field]
     expected_text, expected_images = visible(expected["content"])
     actual_text, actual_images = visible(saved.get("content", ""))
     checks.update(text=actual_text == expected_text, images=actual_images == expected_images)
@@ -537,6 +632,7 @@ def import_bundle(client, config, bundle, update=False):
                               media_id=media_id)
             if not changed:
                 ok = verify(client, state)
+                state["manual_settings"] = bundle.get("manual_settings", [])
                 save_json(path, state)
                 return result(state, path, "unchanged" if ok else "verification_failed")
 
@@ -547,7 +643,7 @@ def import_bundle(client, config, bundle, update=False):
                 response = callback()
             except ApiFailure as error:
                 # An explicit WeChat rejection did not complete the operation; transport errors remain ambiguous.
-                rejected = {40001, 40002, 40005, 40007, 40009, 40013, 40125, 40164, 42001, 45009, 48001}
+                rejected = {40001, 40002, 40005, 40007, 40009, 40013, 40125, 40164, 42001, 45009, 48001, 88000}
                 if error.result.get("wechat_code") in rejected:
                     state.pop("pending", None)
                     state.pop("intended", None)
@@ -583,8 +679,12 @@ def import_bundle(client, config, bundle, update=False):
         article = {"article_type": "news", "title": manifest["title"], "author": manifest.get("author", ""),
                    "digest": manifest["digest"], "content": body, "thumb_media_id": cover,
                    "cover_info": crop_info(bundle["cover"]["size"])}
+        for field in ("need_open_comment", "only_fans_can_comment"):
+            if field in manifest:
+                article[field] = manifest[field]
         # Persist intended content before the network call, so reconcile can compare an ambiguous result.
-        state["intended"] = {"expected": article, "fingerprint": bundle["fingerprint"], "title": manifest["title"]}
+        state["intended"] = {"expected": article, "fingerprint": bundle["fingerprint"], "title": manifest["title"],
+                             "manual_settings": bundle.get("manual_settings", [])}
         if media_id:
             write("draft_update", lambda: client.call("/cgi-bin/draft/update", {"media_id": media_id, "index": 0, "articles": article}))
         else:
@@ -602,6 +702,7 @@ def import_bundle(client, config, bundle, update=False):
 def result(state, path, status):
     return {"ok": bool(state.get("verified")), "status": status, "title": state.get("title"),
             "media_id": state.get("media_id"), "checks": state.get("checks"), "state_file": str(path),
+            "manual_settings": state.get("manual_settings", []),
             "message": "草稿已保存并核验，请到公众号后台完成原创等设置和最终发布。" if state.get("verified") else "草稿核验未通过，请查看检查项。"}
 
 
@@ -626,7 +727,10 @@ def reconcile(client, config, bundle):
                 items = page.get("item", [])
                 for item in items:
                     news = item.get("content", {}).get("news_item", [])
-                    if len(news) == 1 and signature(news[0]) == signature(intended["expected"]):
+                    if (len(news) == 1 and signature(news[0]) == signature(intended["expected"])
+                            and all(type(news[0].get(field)) is int and news[0][field] == intended["expected"][field]
+                                    for field in ("need_open_comment", "only_fans_can_comment")
+                                    if field in intended["expected"])):
                         candidates.append(item["media_id"])
                 offset += len(items)
                 if not items or offset >= page.get("total_count", 0):
@@ -690,7 +794,8 @@ def install_skill(target, project=None):
         raise Failure("目标 skill 已存在，未覆盖：" + str(dest), "conflict", 8)
     # Copy a release allowlist, never arbitrary files later placed beside the tool.
     files = (
-        "SKILL.md", "README.md", "requirements.txt", "setup.sh", "wechat-draft", "Start.command", ".gitignore",
+        "SKILL.md", "README.md", "LICENSE", "requirements.txt", "setup.sh", "wechat-draft", "Start.command", ".gitignore",
+        "personal-settings.example.json", "docs/article-settings.md",
         "scripts/wechat_draft.py", "tests/test_importer.py", "references/article-format.md",
         "references/feasibility.md", "docs/usage.md", "docs/troubleshooting.md", "docs/agent-install.md",
         "example-article/article.json",
@@ -711,6 +816,7 @@ def parser():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--version", action="version", version=VERSION)
     p.add_argument("--config", type=Path, default=CONFIG)
+    p.add_argument("--personal-settings", type=Path, help="个人偏好 JSON 路径；默认读取程序根目录 personal-settings.json，不读取密钥")
     p.add_argument("--network", choices=("direct", "system"), help="微信连接默认直连；system 显式使用系统代理")
     sub = p.add_subparsers(dest="command", required=True)
     sub.add_parser("configure", help="本人在终端隐藏输入并保存凭证")
@@ -738,8 +844,9 @@ def main(argv=None):
         value = install_skill(args.target, args.project)
     else:
         config = {} if args.command == "prepare" else settings(args)
+        profile = personal_settings(args.personal_settings) if args.command in ("prepare", "import") else {}
         if args.command == "prepare":
-            value = preview(load_bundle(args.folder))
+            value = preview(load_bundle(args.folder, profile))
         else:
             # status does not read secrets or contact WeChat.
             if args.command == "status":
@@ -754,7 +861,7 @@ def main(argv=None):
                 state = read_json(path)
                 value = {"ok": True, "status": "local_status", "state_file": str(path), "state": state}
             else:
-                bundle = load_bundle(args.folder) if hasattr(args, "folder") else None
+                bundle = load_bundle(args.folder, profile) if hasattr(args, "folder") else None
                 appid, secret = credentials(config)
                 client = WeChat(appid, secret, config["network"])
                 client.login()

@@ -37,6 +37,8 @@
 
 ## 日常命令
 
+作者和留言默认值从程序根目录的 `personal-settings.json` 自动读取，个人姓名不写进通用 Skill。已保存的个人文件无需重填；字段及摘要去重规则见 [文章设置](article-settings.md)。自定义文件用 `--personal-settings "/private/path/personal-settings.json"`，放在子命令之前；默认文件不存在时保留旧版行为。prepare 也会读取这份偏好文件，但不读取 AppSecret。
+
 | 命令 | 作用 | 访问微信 |
 | --- | --- | --- |
 | `prepare <目录>` | 校验字段、压缩图片、生成 `.wechat-import/preview.html` | 否 |
@@ -48,13 +50,14 @@
 | `reconcile <目录>` | 只读扫描草稿箱，接管唯一匹配稿 | 是 |
 | `install-skill --target ...` | 复制技能包，详见 [Agent 安装](agent-install.md) | 否 |
 
-`prepare` 与 `import` 均输出 JSON。`import` 成功后到公众号后台完成原创、赞赏、合集、封面检查和发布；程序没有发布、群发、删除或白名单修改接口。不用命令行时也可双击 `Start.command` 按菜单选择。
+`prepare` 与 `import` 均输出 JSON。`import` 成功后到公众号后台检查排版、封面并自行发布；程序没有发布、群发、删除或白名单修改接口。不用命令行时也可双击 `Start.command` 按菜单选择。
 
 ## 重复导入与状态
 
 - 状态保存在 `~/.local/share/wechat-draft-importer/<appid>/<article_id>.json`，与文章目录位置无关；搬动文件夹不改变身份，多台电脑不共享状态。
 - 相同内容重跑只核验，不重新创建；修改内容后必须 `import <目录> --update`。更新前会检查后台是否有人工编辑或设置变化，发现变化即停止。
-- 更新范围是工具管理的单篇图文。在后台设置原创、赞赏、合集后，不建议再通过 API 更新。
+- 修改个人作者/留言默认值或升级渲染版本也可能使内容指纹变化，仍须明确 --update；不得换 article_id 绕过。
+- 更新范围是工具管理的单篇图文。在后台手动调整后，不建议再通过 API 更新。
 - 超时后结果可能不确定：状态保留 `pending`，禁止盲目重试；可用 `reconcile` 只读核查并接管唯一匹配稿，扫描上限 1000 条。
 - 未找到匹配不代表没创建，不会自动清空状态重建。不要删除状态文件来“解决”错误。
 - `status` 查本地状态，`verify` 回读核验；图片校验兼容微信 URL 的尺寸转换和 `data-src`，排版仍需手机最终确认。

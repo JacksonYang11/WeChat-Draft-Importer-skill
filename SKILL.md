@@ -1,6 +1,6 @@
 ---
 name: wechat-draft-importer
-description: 将已定稿的 Markdown、导语、封面和插图导入微信公众号草稿箱，支持本机 API 检测、图片压缩、断点恢复和回读核验。适用于 Trae、DeepSeek Harness 等能执行本地命令的 Agent；不负责写作、生图、原创声明或发布。
+description: 将已定稿的 Markdown、导语、封面和插图导入微信公众号草稿箱，支持本机 API 检测、图片压缩、断点恢复和回读核验。适用于 Trae、DeepSeek Harness 等能执行本地命令的 Agent；不负责写作、生图或发布。
 ---
 
 # 微信公众号草稿导入
@@ -15,12 +15,19 @@ description: 将已定稿的 Markdown、导语、封面和插图导入微信公�
 
 只要 `doctor` 能通过就直接使用：不要因为新会话、环境变量为空或首次使用某个 Agent，就让用户重新输入 AppID/AppSecret、运行 configure 或配置环境变量。不要 cat、打印或把密钥正文读入对话，排查时只检查存在性与权限。换设备或系统用户时先运行 `doctor` 检查已有配置。凭证读取顺序与自定义配置见 [使用说明](docs/usage.md#凭证配置)。
 
+## 个人偏好与设置范围
+
+作者、留言默认值保存在本 Skill 根目录的 `personal-settings.json`（权限 600），由程序自动读取。不要在 Skill、代码、通用示例或文章交接文件中硬编码个人默认作者；文章 author 可省略或留空以继承个人设置。不必因新会话或安装副本而重填。自定义位置用全局参数 `--personal-settings`；字段规则、Git 排除及接口依据见 [文章设置](docs/article-settings.md)。
+
+
+导语只放 article.json 的 digest，不能同时写进正文。整理交接包时将独立的导语/摘要段落移出正文，保留原稿；程序会去掉与 digest 完全对应的开头摘要，遇到标记摘要与 digest 不符时停止核对，不自行重写。预览中的折叠设置区域不是上传正文。
+
 ## 输入与执行
 
 1. 读取用户明确指定的定稿及图片；已有文章目录先读 `article.json`。没有交接包时按 [文章格式](references/article-format.md) 整理到独立目录，保留原文、不自行重写，不从最近目录猜文章或封面。
 2. `prepare "$ARTICLE_DIR"` 仅在本地产生压缩图片和预览，检查返回的图片数量、字数和路径。`prepare` 不访问微信也不需要密钥。
 3. 用户已要求导入此篇到自己的公众号时，执行 `doctor`，通过后执行 `import "$ARTICLE_DIR"`。不需要为同一项已授权导入重复征求确认。命令默认微信直连，不能擅自切换代理。
-4. 成功结果须 `ok=true` 且核验项全部通过。返回标题、media_id、预览和状态路径。用户继续在后台声明原创、设置赞赏/合集、检查封面并发布。
+4. 成功结果须 `ok=true` 且核验项全部通过。返回标题、media_id、预览和状态路径。用户在后台检查排版和封面后自行发布。
 
 程序输出为 JSON；日志不得包含 AppSecret、token、凭证文件正文或完整 HTTP 异常。退出码及恢复方式见 [故障排查](docs/troubleshooting.md)。
 

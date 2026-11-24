@@ -4,6 +4,12 @@ __pycache__/
 .wechat-import/
 .env
 secret*
+# Personal publishing preferences and local credentials; only the example is public.
+personal-settings.json
+personal-settings.*.json
+!personal-settings.example.json
+appsecret.txt
+config.local.json
 references/validation.md
 
 # macOS folder metadata

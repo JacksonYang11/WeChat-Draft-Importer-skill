@@ -271,6 +271,128 @@ class WorkflowTests(unittest.TestCase):
         self.assertTrue(w.import_bundle(self.client, self.config, bundle)["ok"])
         self.assertEqual(self.client.calls.count("/cgi-bin/media/uploadimg"), 1)
 
+    def test_personal_author_and_comments_imported_without_changing_manifest(self):
+        before = (self.folder / "article.json").read_bytes()
+        profile = {"author": "测试作者", "need_open_comment": 1, "only_fans_can_comment": 0,
+                   "backend_settings": {"original": True, "reward": True, "creation_source": "测试来源"}}
+        bundle = w.load_bundle(self.folder, profile)
+        result = w.import_bundle(self.client, self.config, bundle)
+        article = self.client.remote[result["media_id"]]
+        self.assertTrue(result["ok"])
+        self.assertEqual(article["author"], "测试作者")
+        self.assertEqual(article["need_open_comment"], 1)
+        self.assertEqual(article["only_fans_can_comment"], 0)
+        self.assertTrue(result["checks"]["need_open_comment"])
+        self.assertTrue(result["checks"]["only_fans_can_comment"])
+        self.assertEqual(len(result["manual_settings"]), 3)
+        self.assertTrue(all(item["status"] == "manual_required" for item in result["manual_settings"]))
+        for field in ("backend_settings", "original", "reward", "creation_source"):
+            self.assertNotIn(field, article)
+        self.assertEqual(before, (self.folder / "article.json").read_bytes())
+
+    def test_explicit_article_author_and_comments_override_defaults(self):
+        file = self.folder / "article.json"
+        manifest = w.read_json(file)
+        manifest.update(author="其他作者", need_open_comment=0, only_fans_can_comment=0)
+        w.save_json(file, manifest)
+        bundle = w.load_bundle(self.folder, {"author": "默认作者", "need_open_comment": 1})
+        result = w.import_bundle(self.client, self.config, bundle)
+        saved = self.client.remote[result["media_id"]]
+        self.assertEqual(saved["author"], "其他作者")
+        self.assertEqual(saved["need_open_comment"], 0)
+
+    def test_comments_wrong_or_missing_do_not_pass_verification(self):
+        bundle = w.load_bundle(self.folder, {"need_open_comment": 1, "only_fans_can_comment": 0})
+        result = w.import_bundle(self.client, self.config, bundle)
+        state = self.saved()
+        self.client.remote[result["media_id"]]["need_open_comment"] = 0
+        self.assertFalse(w.verify(self.client, state))
+        self.assertFalse(state["checks"]["need_open_comment"])
+        del self.client.remote[result["media_id"]]["only_fans_can_comment"]
+        self.assertFalse(w.verify(self.client, state))
+        self.assertFalse(state["checks"]["only_fans_can_comment"])
+
+    def test_invalid_comments_stop_before_upload(self):
+        for value in (True, "1", 2):
+            file = self.folder / "article.json"
+            manifest = w.read_json(file)
+            manifest["need_open_comment"] = value
+            w.save_json(file, manifest)
+            with self.assertRaises(w.Failure):
+                self.bundle()
+        self.assertFalse(self.client.calls)
+
+    def test_fans_comments_require_open_comments(self):
+        with self.assertRaises(w.Failure):
+            w.load_bundle(self.folder, {"only_fans_can_comment": 1})
+
+    def test_summary_only_in_digest_plain_quote_bold_and_after_opening_image(self):
+        summary = w.read_json(self.folder / "article.json")["digest"]
+        file = self.folder / "article.md"
+        for opening in (summary, '> 导语：' + summary, '**摘要：**' + summary,
+                        '![opening](images/illustration.jpg)\n\n> 导语：' + summary):
+            original = opening + '\n\n正式正文从这里开始。\n'
+            file.write_text(original)
+            bundle = self.bundle()
+            self.assertEqual(bundle["summary_paragraphs_removed"], 1)
+            self.assertNotIn(summary, w.visible(bundle["body"])[0])
+            self.assertEqual(bundle["manifest"]["digest"], summary)
+            result = w.preview(bundle)
+            self.assertIn('不属于上传正文', Path(result["preview"]).read_text())
+            self.assertEqual(file.read_text(), original)
+
+    def test_mismatched_labelled_summary_requires_review(self):
+        (self.folder / "article.md").write_text('> 导语：另一份导语。\n\n正式正文。')
+        with self.assertRaises(w.Failure) as error:
+            self.bundle()
+        self.assertEqual(error.exception.result["status"], "invalid_input")
+        self.assertFalse(self.client.calls)
+
+    def test_non_summary_body_preserved_and_later_quote_not_removed(self):
+        summary = w.read_json(self.folder / "article.json")["digest"]
+        (self.folder / "article.md").write_text('这是实际开头。\n\n' + summary)
+        bundle = self.bundle()
+        self.assertEqual(bundle["summary_paragraphs_removed"], 0)
+        self.assertIn(summary, w.visible(bundle["body"])[0])
+
+    def test_comments_rejection_stops_and_does_not_silently_close_comments(self):
+        original = self.client.call
+        def reject_comments(path, *args, **kwargs):
+            if path.endswith("draft/add"):
+                self.client.calls.append(path)
+                raise w.ApiFailure("no privilege", "wechat_api", 6, wechat_code=88000)
+            return original(path, *args, **kwargs)
+        self.client.call = reject_comments
+        bundle = w.load_bundle(self.folder, {"need_open_comment": 1})
+        with self.assertRaises(w.ApiFailure):
+            w.import_bundle(self.client, self.config, bundle)
+        self.assertNotIn("pending", self.saved())
+        self.assertEqual(self.client.calls.count("/cgi-bin/draft/add"), 1)
+        self.assertFalse(self.client.remote)
+
+    def test_manual_preferences_change_without_rewriting_draft(self):
+        profile = {"backend_settings": {"original": True}}
+        bundle = w.load_bundle(self.folder, profile)
+        w.import_bundle(self.client, self.config, bundle)
+        profile["backend_settings"]["reward"] = True
+        updated = w.load_bundle(self.folder, profile)
+        self.assertEqual(bundle["fingerprint"], updated["fingerprint"])
+        result = w.import_bundle(self.client, self.config, updated)
+        self.assertEqual(result["status"], "unchanged")
+        self.assertEqual(len(result["manual_settings"]), 2)
+        self.assertNotIn("/cgi-bin/draft/update", self.client.calls)
+
+    def test_reconcile_distinguishes_same_content_with_different_comments(self):
+        bundle = w.load_bundle(self.folder, {"need_open_comment": 1})
+        self.client.fail = "add"
+        with self.assertRaises(w.Failure):
+            w.import_bundle(self.client, self.config, bundle)
+        self.client.remote["other-draft"] = copy.deepcopy(self.client.remote["draft-1"])
+        self.client.remote["other-draft"]["need_open_comment"] = 0
+        result = w.reconcile(self.client, self.config, bundle)
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["media_id"], "draft-1")
+
 
 class CredentialAndTransportTests(unittest.TestCase):
     def test_literal_env_is_not_shell_execution(self):
@@ -329,6 +451,9 @@ class CredentialAndTransportTests(unittest.TestCase):
             target = Path(value["skill"])
             self.assertTrue((target / "SKILL.md").is_file())
             self.assertTrue((target / "scripts/wechat_draft.py").is_file())
+            self.assertTrue((target / "docs/article-settings.md").is_file())
+            self.assertTrue((target / "personal-settings.example.json").is_file())
+            self.assertTrue((target / "LICENSE").is_file())
             self.assertFalse((target / ".venv").exists())
             process = subprocess.run([sys.executable, str(target / "scripts/wechat_draft.py"), "--version"],
                                      cwd=temp, capture_output=True, text=True)
@@ -342,12 +467,55 @@ class CredentialAndTransportTests(unittest.TestCase):
             (root / "SKILL.md").write_text("skill")
             (root / "appsecret.txt").write_text("do-not-copy")
             (root / "private-account.json").write_text("do-not-copy")
+            (root / "personal-settings.json").write_text('{"author":"private author"}')
             with patch.object(w, "ROOT", root):
                 value = w.install_skill("trae", Path(temp) / "project")
             target = Path(value["skill"])
             self.assertTrue((target / "SKILL.md").exists())
             self.assertFalse((target / "appsecret.txt").exists())
             self.assertFalse((target / "private-account.json").exists())
+            self.assertFalse((target / "personal-settings.json").exists())
+
+    def test_personal_file_permissions_and_validation(self):
+        with tempfile.TemporaryDirectory() as temp:
+            file = Path(temp) / "personal-settings.json"
+            w.save_json(file, {"author": "测试作者", "need_open_comment": 1,
+                               "backend_settings": {"original": True}})
+            self.assertEqual(w.personal_settings(file)["need_open_comment"], 1)
+            file.chmod(0o644)
+            with self.assertRaises(w.Failure):
+                w.personal_settings(file)
+            file.chmod(0o600)
+            for value in ({"need_open_comment": True}, {"reward": True},
+                          {"backend_settings": {"reward": 1}}, {"author": "字" * 17}):
+                w.save_json(file, value)
+                with self.assertRaises(w.Failure):
+                    w.personal_settings(file)
+
+    def test_default_missing_profile_optional_but_explicit_missing_fails(self):
+        with tempfile.TemporaryDirectory() as temp:
+            file = Path(temp) / "missing.json"
+            with patch.object(w, "PERSONAL", file):
+                self.assertEqual(w.personal_settings(), {})
+            with self.assertRaises(w.Failure):
+                w.personal_settings(file)
+
+    def test_prepare_uses_personal_file_without_credentials(self):
+        with tempfile.TemporaryDirectory() as temp:
+            folder = Path(temp) / "article"
+            w.initialize(folder)
+            file = Path(temp) / "personal-settings.json"
+            w.save_json(file, {"author": "测试作者", "need_open_comment": 1,
+                               "backend_settings": {"reward": True}})
+            bad_config = Path(temp) / "bad-config.json"
+            bad_config.write_text('not JSON')
+            output = io.StringIO()
+            with patch.object(w, "credentials", side_effect=AssertionError("must not read credentials")):
+                with contextlib.redirect_stdout(output):
+                    exit_code = w.main(["--config", str(bad_config), "--personal-settings", str(file),
+                                        "prepare", str(folder)])
+            self.assertEqual(exit_code, 0)
+            self.assertEqual(json.loads(output.getvalue())["manual_settings"][0]["status"], "manual_required")
 
     def test_offline_preview_does_not_read_account_config(self):
         with tempfile.TemporaryDirectory() as temp:
