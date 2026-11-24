@@ -19,7 +19,7 @@ from PIL import Image
 
 
 class FakeWeChat:
-    appid = "wx1234567890abcdef"
+    appid = "wx1234567890abcdef"  # 假占位符，非真实 AppID；真实凭证只存于本机 ~/.config 下，不入库
 
     def __init__(self):
         self.remote, self.calls = {}, []
