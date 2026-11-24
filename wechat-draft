@@ -1,0 +1,8 @@
+#!/bin/sh
+set -eu
+TOOL_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+if [ ! -x "$TOOL_DIR/.venv/bin/python" ]; then
+    echo '首次使用请先运行同目录的 setup.sh。' >&2
+    exit 2
+fi
+exec "$TOOL_DIR/.venv/bin/python" "$TOOL_DIR/scripts/wechat_draft.py" "$@"
