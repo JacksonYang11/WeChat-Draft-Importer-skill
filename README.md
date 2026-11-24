@@ -48,7 +48,7 @@ sh setup.sh                        # 首次运行：创建 .venv 并安装依赖
 ./wechat-draft import "/path/to/article-folder"
 ```
 
-`prepare` 完全本地运行，在文章目录下输出 `.wechat-import/preview.html` 和压缩图片；`import` 成功后到公众号后台检查排版、封面并自行发布。文章文件夹结构见 [文章交接格式](references/article-format.md)。没有现成文章时可用 `./wechat-draft init "/path/to/new-folder"` 生成示例；不用命令行也可双击 `Start.command` 按菜单操作。
+`prepare` 完全本地运行，在文章目录下输出 `.wechat-import/preview.html` 和压缩图片；`import` 成功后到公众号后台检查排版、封面并自行发布。文章文件夹结构见 [文章交接格式](references/article-format.md)。没有现成文章时可用 `./wechat-draft init "/path/to/article/wechat-draft-package"` 生成示例；不用命令行也可双击 `Start.command` 按菜单操作。
 
 ## 文档
 

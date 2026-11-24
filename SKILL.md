@@ -24,7 +24,7 @@ description: 将已定稿的 Markdown、导语、封面和插图导入微信公�
 
 ## 输入与执行
 
-1. 读取用户明确指定的定稿及图片；已有文章目录先读 `article.json`。没有交接包时按 [文章格式](references/article-format.md) 整理到独立目录，保留原文、不自行重写，不从最近目录猜文章或封面。
+1. 读取用户明确指定的定稿及图片；已有文章目录先读 `article.json`。没有交接包时按 [文章格式](references/article-format.md) 整理到文章所在目录下的 `wechat-draft-package/`，保留原文、不自行重写，不从最近目录猜文章或封面。交接包目录固定叫 `wechat-draft-package`，不要另起名字（如 wechat-handoff、wechat-draft）；已存在同名目录时直接复用。
 2. `prepare "$ARTICLE_DIR"` 仅在本地产生压缩图片和预览，检查返回的图片数量、字数和路径。`prepare` 不访问微信也不需要密钥。
 3. 用户已要求导入此篇到自己的公众号时，执行 `doctor`，通过后执行 `import "$ARTICLE_DIR"`。不需要为同一项已授权导入重复征求确认。命令默认微信直连，不能擅自切换代理。
 4. 成功结果须 `ok=true` 且核验项全部通过。返回标题、media_id、预览和状态路径。用户在后台检查排版和封面后自行发布。

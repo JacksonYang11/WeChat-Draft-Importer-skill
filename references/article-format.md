@@ -1,9 +1,9 @@
 # Trae → 导入工具的交接格式
 
-每篇文章一个独立文件夹：
+每篇文章一个独立文件夹，名字固定为 `wechat-draft-package`，放在文章所在目录下：
 
 ```text
-my-history-article/
+wechat-draft-package/
   article.json
   article.md
   images/
@@ -56,4 +56,4 @@ article.json（UTF-8 JSON，不是 shell 文件）：
 
 可直接把以下要求交给 Trae 的写作/生图 Agent：
 
-> 定稿和全部图片验收后，按 wechat-draft-importer/references/article-format.md 创建文章交接文件夹，保留原稿。把独立导语移到 article.json 的 digest，正文不重复放导语；正文其余内容不改写，每张本地插图路径写进对应位置的 Markdown 图片标记。生成 article.json，填写稳定 article_id、标题、导语、正文路径和封面路径，author 留空以使用个人文件的默认作者。不要执行生图，不要把 API 密钥或个人设置文件复制进交接包。交接完成后先运行 prepare 检查。
+> 定稿和全部图片验收后，按 wechat-draft-importer/references/article-format.md 在文章所在目录下创建名为 wechat-draft-package 的文章交接文件夹，保留原稿。把独立导语移到 article.json 的 digest，正文不重复放导语；正文其余内容不改写，每张本地插图路径写进对应位置的 Markdown 图片标记。生成 article.json，填写稳定 article_id、标题、导语、正文路径和封面路径，author 留空以使用个人文件的默认作者。不要执行生图，不要把 API 密钥或个人设置文件复制进交接包。交接完成后先运行 prepare 检查。

@@ -2,10 +2,10 @@
 
 ## 文章交接包
 
-每篇文章一个文件夹，包含 `article.json`、正文 Markdown 和 `images/`。字段、字数与图片路径规则见 [文章交接格式](../references/article-format.md)。
+每篇文章一个文件夹，名字固定为 `wechat-draft-package`，包含 `article.json`、正文 Markdown 和 `images/`。字段、字数与图片路径规则见 [文章交接格式](../references/article-format.md)。
 
 ```bash
-./wechat-draft init "/path/to/new-folder"   # 生成占位示例；目录已存在时不会覆盖
+./wechat-draft init "/path/to/article/wechat-draft-package"   # 生成占位示例；目录已存在时不会覆盖
 ```
 
 ## 凭证配置
