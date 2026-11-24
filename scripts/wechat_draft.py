@@ -692,7 +692,7 @@ def install_skill(target, project=None):
     files = (
         "SKILL.md", "README.md", "requirements.txt", "setup.sh", "wechat-draft", "Start.command", ".gitignore",
         "scripts/wechat_draft.py", "tests/test_importer.py", "references/article-format.md",
-        "references/feasibility.md", "references/validation.md", "example-article/article.json",
+        "references/feasibility.md", "example-article/article.json",
         "example-article/article.md", "example-article/images/cover.jpg", "example-article/images/illustration.jpg",
     )
     dest.mkdir(parents=True)

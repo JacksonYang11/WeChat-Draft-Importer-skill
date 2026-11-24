@@ -1,12 +1,12 @@
 # 技术调研与实施结论
 
-调研日期：2026-11-17。结论：可以做成独立 Python 程序，再用同一份 Agent Skills 指令供 Trae 和 DeepSeek Harness 调用；不需要 Codex、OpenAI SDK、浏览器或常驻服务器。运行需要 Python 3.9+、markdown-it-py 和 Pillow。
+结论：可以做成独立 Python 程序，再用同一份 Agent Skills 指令供 Trae 和 DeepSeek Harness 调用；不需要 Codex、OpenAI SDK、浏览器或常驻服务器。运行需要 Python 3.9+、markdown-it-py 和 Pillow。
 
 ## 证据与技术阻塞点
 
 | 问题 | 核实结果与处理 |
 |---|---|
-| 账号能否通过官方 API 写草稿 | 已于 11 月 15 日实测 stable_token、正文图、永久封面、draft/add、draft/get 全部通过，后台预览正常。历史实测不是对当前凭证及 IP 仍有效的保证。 |
+| 账号能否通过官方 API 写草稿 | 已实测 stable_token、正文图、永久封面、draft/add、draft/get 全部通过，后台预览正常。历史实测不是对当前凭证及 IP 仍有效的保证。 |
 | 本机是否被“服务器端调用”限制 | 这里指密钥在可信程序中、通过 HTTPS 调用，而非浏览器前端。此前 Mac 本机调用成功。 |
 | 动态 IP、代理分流 | 无法保证家庭宽带公网出口不变。默认仅微信 API 直连，不修改系统代理；可显式选择系统代理。以微信 40164 中的 IP 为准，显示白名单页面；不自动修改安全设置。 |
 | AppSecret 与 Agent 环境隔离 | 不依赖终端继承 .zshrc。支持环境变量、权限 600 的本地密钥文件、既有 ~/.config/wechat-workflow/env 的字面量读取；不执行该文件、不回显凭证。首次配置可在独立终端隐藏输入。相同系统用户下其他程序仍可读取其文件，不声称加密隔离。 |
@@ -32,7 +32,7 @@
 - Trae Skills：https://docs.trae.cn/ide/skills
 - Agent Skills：https://agentskills.io/specification
 
-上述微信页面通过其 .md 官方版本重新获取核对；Trae 页面读取嵌入的正文内容。DSH 证据来自本机官方安装包 /Applications/DeepSeek Harness.app/Contents/Resources/app.asar 内：
+上述微信页面通过其 .md 官方版本重新获取核对；Trae 页面读取嵌入的正文内容。DSH 证据来自本机官方安装包内的随附文档：
 
 - dsh/node_modules/@deepseek-ai/dsh/docs/subsystems/skills.zh.md
 - dsh/node_modules/@deepseek-ai/dsh-skill-filesystem/README.zh.md
@@ -40,4 +40,4 @@
 
 ## 验证范围
 
-交付时由 tests/test_importer.py 覆盖本地与模拟 HTTP 流程；实际微信调用以 validation.md 的记录为准。模拟测试不冒充正式图文的实测，也不声称其他 Agent 已实际执行过此技能。
+交付时由 tests/test_importer.py 覆盖本地与模拟 HTTP 流程。模拟测试不冒充正式图文的实测，也不声称其他 Agent 已实际执行过此技能。

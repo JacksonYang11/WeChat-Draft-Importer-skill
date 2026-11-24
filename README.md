@@ -59,6 +59,17 @@ setup.sh 创建本目录 .venv 并从 PyPI 安装 Pillow、markdown-it-py，仅�
 ./wechat-draft init "/path/to/new-example-folder"
 ```
 
+## 测试素材
+
+`example-article/` 是仓库自带的测试素材，不是可直接发布的文章：正文是占位文字，`images/` 里是纯色占位图，只用于验证交接格式、图片处理和预览链路。
+
+```bash
+./wechat-draft prepare example-article
+open example-article/.wechat-import/preview.html
+```
+
+`prepare` 完全本地运行，会按 `article.json` 校验标题、导语、字数与图片路径，生成压缩图和预览，不访问微信。需要验证完整链路时可执行 `./wechat-draft import example-article`，它会真实写入草稿箱，测试后请自行删除草稿。
+
 ## 重复导入与恢复
 
 - 同一账号和 article\_id 的结果保存在 `~/.local/share/wechat-draft-importer/<appid>/<article_id>.json`，与 Codex/Trae 目录无关；搬动文章文件夹不改变身份。多台电脑不共享状态，不保证跨设备去重。
@@ -109,4 +120,4 @@ Trae 可说“用 wechat-draft-importer 导入这个文件夹”；Harness 支�
 
 验证：`.venv/bin/python -m unittest discover -s tests -v`。
 
-[技术调研与官方来源](references/feasibility.md) · [本次验证记录](references/validation.md)
+[技术调研与官方来源](references/feasibility.md)

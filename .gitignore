@@ -4,6 +4,7 @@ __pycache__/
 .wechat-import/
 .env
 secret*
+references/validation.md
 
 # macOS folder metadata
 .DS_Store
