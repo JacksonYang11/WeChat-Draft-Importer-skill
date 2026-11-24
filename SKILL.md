@@ -11,16 +11,9 @@ description: 将已定稿的 Markdown、导语、封面和插图导入微信公�
 
 ## 复用本机凭证
 
-如果本机已完成凭证配置，后续直接调用程序，无需重复配置。程序默认读取当前系统用户下的：
+程序默认读取 `~/.config/wechat-draft-importer/config.json` 和同目录的 `appsecret.txt`（`~` 指当前系统用户）。这两份文件在项目目录之外，与 skill 安装位置无关，不随 Git 提交或安装迁移。
 
-- `~/.config/wechat-draft-importer/config.json`：AppID 和密钥路径。
-- `~/.config/wechat-draft-importer/appsecret.txt`：AppSecret（实际路径以配置为准）。
-
-本机真实使用的凭证正保存在上述两个路径；`~` 表示当前系统用户的主目录。配置与密钥均在当前项目目录之外，不随 Git 提交，无需在本项目的 `.gitignore` 中添加外部路径。其他设备须先检查自己的实际配置，不能假定已配置。
-
-这些文件与 skill 安装位置无关；同一系统用户的 Trae、Harness 或独立命令共用，不需要复制到文章或 skill 目录。换设备或系统用户时先由 `doctor` 检查是否已有配置，不能假定凭证随 skill 迁移。
-
-不要因为开启了新会话、从桌面启动 Agent、环境变量为空或首次使用某个 Agent，就让用户重新输入 AppID/AppSecret、运行 configure 或配置环境变量。直接执行 `doctor`，让程序读取已保存的配置；不要 cat、打印或把密钥正文读入对话。程序仍支持用户主动设置的环境变量覆盖本地配置，排查时仅检查变量是否存在，不输出值。
+只要 `doctor` 能通过就直接使用：不要因为新会话、环境变量为空或首次使用某个 Agent，就让用户重新输入 AppID/AppSecret、运行 configure 或配置环境变量。不要 cat、打印或把密钥正文读入对话，排查时只检查存在性与权限。换设备或系统用户时先运行 `doctor` 检查已有配置。凭证读取顺序与自定义配置见 [使用说明](docs/usage.md#凭证配置)。
 
 ## 输入与执行
 
@@ -29,7 +22,7 @@ description: 将已定稿的 Markdown、导语、封面和插图导入微信公�
 3. 用户已要求导入此篇到自己的公众号时，执行 `doctor`，通过后执行 `import "$ARTICLE_DIR"`。不需要为同一项已授权导入重复征求确认。命令默认微信直连，不能擅自切换代理。
 4. 成功结果须 `ok=true` 且核验项全部通过。返回标题、media_id、预览和状态路径。用户继续在后台声明原创、设置赞赏/合集、检查封面并发布。
 
-程序输出为 JSON；日志不得包含 AppSecret、token、凭证文件正文或完整 HTTP 异常。退出码及恢复方式见 [使用说明](README.md)。
+程序输出为 JSON；日志不得包含 AppSecret、token、凭证文件正文或完整 HTTP 异常。退出码及恢复方式见 [故障排查](docs/troubleshooting.md)。
 
 ## 必须正确处理的状态
 
@@ -42,4 +35,4 @@ description: 将已定稿的 Markdown、导语、封面和插图导入微信公�
 ## 交付与可移植性
 
 技能须保留整个文件夹；只复制 SKILL.md 会丢失程序。用户自行调用命令可完全不启动 Agent。
-安装到 Trae/DSH 的方法见 README；调研与已知限制见 [技术调研](references/feasibility.md)。安装脚本只复制程序，不复制虚拟环境、状态或凭证。未实际验证目标 Agent 已加载技能时，不声称完成了跨 Agent 联调。
+安装到 Trae/DSH 的方法见 [Agent 安装](docs/agent-install.md)；已知限制见 [技术调研](references/feasibility.md)。安装脚本只复制程序，不复制虚拟环境、状态或凭证。未实际验证目标 Agent 已加载技能时，不声称完成了跨 Agent 联调。
